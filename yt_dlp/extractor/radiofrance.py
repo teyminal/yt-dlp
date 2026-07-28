@@ -1,6 +1,9 @@
 import itertools
+import json
 import re
 import urllib.parse
+
+from yt_dlp import YoutubeDL
 
 from .common import InfoExtractor
 from ..utils import (
@@ -11,6 +14,8 @@ from ..utils import (
     strftime_or_none,
     traverse_obj,
     unified_strdate,
+    get_element_html_by_attribute,
+    get_element_by_attribute,
     urljoin,
 )
 
@@ -32,6 +37,7 @@ class RadioFranceIE(InfoExtractor):
     }
 
     def _real_extract(self, url):
+        print("extractGlobal")
         m = self._match_valid_url(url)
         video_id = m.group('id')
 
@@ -130,6 +136,8 @@ class FranceCultureIE(RadioFranceBaseIE):
     ]
 
     def _real_extract(self, url):
+        print("extractCul")
+
         video_id, display_id = self._match_valid_url(url).group('id', 'display_id')
         webpage = self._download_webpage(url, display_id)
 
@@ -233,6 +241,8 @@ class RadioFranceLiveIE(RadioFranceBaseIE):
     }]
 
     def _real_extract(self, url):
+        print("extractLive")
+
         station_id, substation_id = self._match_valid_url(url).group('id', 'substation_id')
 
         if substation_id:
@@ -288,6 +298,8 @@ class RadioFrancePlaylistBaseIE(RadioFranceBaseIE):
             content_response = self._call_api(content_id, next_cursor, page_num)
 
     def _real_extract(self, url):
+        print("extractPlayList")
+
         display_id = self._match_id(url)
 
         metadata = self._download_json(
@@ -399,6 +411,7 @@ class RadioFranceProfileIE(RadioFrancePlaylistBaseIE):
     _METADATA_KEY = 'documents'
 
     def _call_api(self, profile_id, cursor, page_num):
+        print('DEBUG : https://www.radiofrance.fr/api/v2.1/taxonomy/'+profile_id+'}/documents')
         resp = self._download_json(
             f'https://www.radiofrance.fr/api/v2.1/taxonomy/{profile_id}/documents', profile_id,
             note=f'Downloading page {page_num}', query={
@@ -408,6 +421,19 @@ class RadioFranceProfileIE(RadioFrancePlaylistBaseIE):
 
         resp['next'] = traverse_obj(resp, ('pagination', 'next'))
         return resp
+
+    def _real_extract(self, url):
+        print("yoy")
+        video_id = self._match_id(url)
+        webpage = self._download_webpage(url, video_id)
+        json_content = get_element_by_attribute('type','application/ld+json',webpage) or ''
+        dict = []
+        for i in range(20):
+            #print(traverse_obj(json.loads(json_content),('@graph',1,'itemListElement',i,'url')))# gets you like 1 url, which is cool
+            url = traverse_obj(json.loads(json_content),('@graph',1,'itemListElement',i,'url'))
+            extractor = RadioFranceIE()
+            dict.append(YoutubeDL().extract_info(url))
+        return dict
 
 
 class RadioFranceProgramScheduleIE(RadioFranceBaseIE):
@@ -463,6 +489,8 @@ class RadioFranceProgramScheduleIE(RadioFranceBaseIE):
                 }))
 
     def _real_extract(self, url):
+        print("extractProgSch")
+
         station = self._match_valid_url(url).group('station')
         webpage = self._download_webpage(url, station)
         grid_data = self._extract_data_from_webpage(webpage, station, 'grid')
@@ -471,3 +499,4 @@ class RadioFranceProgramScheduleIE(RadioFranceBaseIE):
         return self.playlist_result(
             self._generate_playlist_entries(url, grid_data),
             join_nonempty(station, 'program', upload_date), upload_date=upload_date)
+
