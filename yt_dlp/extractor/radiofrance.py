@@ -7,6 +7,7 @@ from yt_dlp import YoutubeDL
 
 from .common import InfoExtractor
 from ..utils import (
+    get_element_by_attribute,
     int_or_none,
     join_nonempty,
     js_to_json,
@@ -14,9 +15,8 @@ from ..utils import (
     strftime_or_none,
     traverse_obj,
     unified_strdate,
-    get_element_html_by_attribute,
-    get_element_by_attribute,
     urljoin,
+    OnDemandPagedList,
 )
 
 
@@ -37,7 +37,7 @@ class RadioFranceIE(InfoExtractor):
     }
 
     def _real_extract(self, url):
-        print("extractGlobal")
+        print('extractGlobal')
         m = self._match_valid_url(url)
         video_id = m.group('id')
 
@@ -81,6 +81,8 @@ class RadioFranceBaseIE(InfoExtractor):
         'franceinfo',
         'franceinter',
         'francemusique',
+        'francebleu',
+        'savoirs-plus',
         'fip',
         'mouv',
     )))
@@ -136,14 +138,13 @@ class FranceCultureIE(RadioFranceBaseIE):
     ]
 
     def _real_extract(self, url):
-        print("extractCul")
+        print('extractCul')
 
         video_id, display_id = self._match_valid_url(url).group('id', 'display_id')
         webpage = self._download_webpage(url, display_id)
 
         # _search_json_ld doesn't correctly handle this. See https://github.com/yt-dlp/yt-dlp/pull/3874#discussion_r891903846
         video_data = self._search_json('', webpage, 'audio data', display_id, contains_pattern=r'{\s*"@type"\s*:\s*"AudioObject".+}')
-
         return {
             'id': video_id,
             'display_id': display_id,
@@ -241,7 +242,7 @@ class RadioFranceLiveIE(RadioFranceBaseIE):
     }]
 
     def _real_extract(self, url):
-        print("extractLive")
+        print('extractLive')
 
         station_id, substation_id = self._match_valid_url(url).group('id', 'substation_id')
 
@@ -298,7 +299,7 @@ class RadioFrancePlaylistBaseIE(RadioFranceBaseIE):
             content_response = self._call_api(content_id, next_cursor, page_num)
 
     def _real_extract(self, url):
-        print("extractPlayList")
+        print('extractPlayList')
 
         display_id = self._match_id(url)
 
@@ -422,18 +423,42 @@ class RadioFranceProfileIE(RadioFrancePlaylistBaseIE):
         resp['next'] = traverse_obj(resp, ('pagination', 'next'))
         return resp
 
+
     def _real_extract(self, url):
-        print("yoy")
         video_id = self._match_id(url)
         webpage = self._download_webpage(url, video_id)
-        json_content = get_element_by_attribute('type','application/ld+json',webpage) or ''
-        dict = []
-        for i in range(20):
-            #print(traverse_obj(json.loads(json_content),('@graph',1,'itemListElement',i,'url')))# gets you like 1 url, which is cool
-            url = traverse_obj(json.loads(json_content),('@graph',1,'itemListElement',i,'url'))
-            extractor = RadioFranceIE()
-            dict.append(YoutubeDL().extract_info(url))
-        return dict
+        json_content = get_element_by_attribute('type', 'application/ld+json', webpage) or ''
+
+        def fetch_page(page_num):
+            element_list = traverse_obj(json.loads(json_content),('@graph',1,'itemListElement')) or ''
+            for i in range(len(element_list)):
+                url = traverse_obj(element_list,(i,'url'))
+                regexp = re.compile(r'https://www.radiofrance.fr/[^/]*/podcasts/.*')#verify that it is in fact a podcast
+                if regexp.search(url):
+                    yield self.url_result(
+                        url,
+                        ie=FranceCultureIE,
+                        video_title="IDC")
+                    #dict.append(YoutubeDL().download(url))
+
+        # checks whether there is a page after, and if so, goes to download it
+        regexp = re.compile(r'<link[^>]+rel=["\']next["\'][^>]*href=["\'][^"\']+["\']')#verify that it is in fact a podcast
+
+        #if regexp.search(webpage):
+        #    next_page = self._html_search_regex( r'<link[^>]+rel=["\']next["\'][^>]*href=["\']([^"\']+)["\']', webpage, 'next page URL')
+        #    print(next_page)
+        #    if (next_page != ''):
+        #        more_pages = YoutubeDL().download(next_page)
+        #        if more_pages is Dict[str,Unknown]:
+        #            print(str(more_pages))
+        #            for i in more_pages:
+        #                dict.append(i)
+
+        #return self.playlist_result(dict)
+        return self.playlist_result(
+            OnDemandPagedList(fetch_page, 20), 'full_id', display_id='display_id',
+            title='page_data.get(\'title\')', description='page_data.get(\'synopsis\')')
+
 
 
 class RadioFranceProgramScheduleIE(RadioFranceBaseIE):
@@ -489,7 +514,7 @@ class RadioFranceProgramScheduleIE(RadioFranceBaseIE):
                 }))
 
     def _real_extract(self, url):
-        print("extractProgSch")
+        print('extractProgSch')
 
         station = self._match_valid_url(url).group('station')
         webpage = self._download_webpage(url, station)
