@@ -288,9 +288,13 @@ class RadioFrancePlaylistBaseIE(RadioFranceBaseIE):
         def fetch_page(page_num,url=url):
             webpage = self._download_webpage(url+"?p="+str(page_num), title)
             json_content = get_element_by_attribute('type', 'application/ld+json', webpage) or ''
-            element_list = traverse_obj(json.loads(json_content),('@graph',2,'itemListElement'))
+            element_list = None
+            for elt in json.loads(json_content).get('@graph'):
+                if elt.get('@type') == 'ItemList':
+                    element_list = elt.get('itemListElement')
+
             if(element_list is None):
-                self.report_warning(f'Could not extract element_list{bug_reports_message()}')
+                self.report_warning(f'Could not extract element_list')
                 return
             for i in element_list:
                 url = i.get('url')
@@ -356,14 +360,6 @@ class RadioFrancePodcastIE(RadioFrancePlaylistBaseIE):
         'only_matching': True,
     }]
 
-    _METADATA_KEY = 'expressions'
-
-    def _call_api(self, podcast_id, cursor, page_num):
-        return self._download_json(
-            f'https://www.radiofrance.fr/api/v2.1/concepts/{podcast_id}/expressions', podcast_id,
-            note=f'Downloading page {page_num}', query={'pageCursor': cursor})
-
-
 class RadioFranceProfileIE(RadioFrancePlaylistBaseIE):
     _VALID_URL = rf'{RadioFranceBaseIE._VALID_URL_BASE}/personnes/(?P<id>[\w-]+)'
 
@@ -391,38 +387,12 @@ class RadioFranceProfileIE(RadioFrancePlaylistBaseIE):
         'only_matching': True,
     }]
 
-    _METADATA_KEY = 'documents'
-
-    def _real_extract(self, url):
-        title = self._match_id(url)
-        webpage = self._download_webpage(url, title)
-        description = self._html_search_regex(f',role:["\']([^"]+)["\'],',webpage,'Role/description',fatal=False) or ''#not using ['\"] because description can contain 's
-
-        def fetch_page(page_num,url=url):
-            webpage = self._download_webpage(url+"?p="+str(page_num), title)
-            json_content = get_element_by_attribute('type', 'application/ld+json', webpage) or ''
-            element_list = traverse_obj(json.loads(json_content),('@graph',1,'itemListElement'))
-            if(element_list is None):
-                self.report_warning(f'Could not extract element_list{bug_reports_message()}')
-                return
-            for i in element_list:
-                url = i.get('url')
-                yield self.url_result(
-                    url,
-                    ie=FranceCultureIE)
-
-        #return self.playlist_result(dict)
-        return self.playlist_result(
-            OnDemandPagedList(fetch_page, 20), title, title=title, description=description)
-
-
-
 class RadioFranceProgramScheduleIE(RadioFranceBaseIE):
     _VALID_URL = rf'''(?x)
         {RadioFranceBaseIE._VALID_URL_BASE}
         /(?P<station>{RadioFranceBaseIE._STATIONS_RE})
-        /grille-programmes
-    '''
+        /grille-programmes\?(?P<id>.*)
+        '''
 
     _TESTS = [{
         'url': 'https://www.radiofrance.fr/franceinter/grille-programmes?date=17-02-2023',
@@ -457,27 +427,24 @@ class RadioFranceProgramScheduleIE(RadioFranceBaseIE):
         'only_matching': True,
     }]
 
-    def _generate_playlist_entries(self, webpage_url, api_response):
-        for entry in traverse_obj(api_response, ('steps', lambda _, v: v['expression']['path'])):
-            yield self.url_result(
-                urljoin(webpage_url, f'/{entry["expression"]["path"]}'), ie=FranceCultureIE,
-                url_transparent=True, **traverse_obj(entry, {
-                    'title': ('expression', 'title'),
-                    'thumbnail': ('expression', 'visual', 'src'),
-                    'timestamp': ('startTime', {int_or_none}),
-                    'series_id': ('concept', 'id'),
-                    'series': ('concept', 'title'),
-                }))
-
     def _real_extract(self, url):
-        print('extractProgSch')
+        title = self._match_id(url)
+        #description = self._html_search_regex(f',role:["\']([^"]+)["\'],',webpage,'Role/description',fatal=False) or ''#not using ['\"] because description can contain 's
 
-        station = self._match_valid_url(url).group('station')
-        webpage = self._download_webpage(url, station)
-        grid_data = self._extract_data_from_webpage(webpage, station, 'grid')
-        upload_date = strftime_or_none(grid_data.get('date'), '%Y%m%d')
+        def fetch_page():
+            title = self._match_id(url)
+            webpage = self._download_webpage(url, title)
+            regex = rf'<a href="(/(?:{RadioFranceBaseIE._STATIONS_RE})/[^/]*/[^"\']+)["\']'
+            element_list = re.findall(regex, webpage)
 
-        return self.playlist_result(
-            self._generate_playlist_entries(url, grid_data),
-            join_nonempty(station, 'program', upload_date), upload_date=upload_date)
+            for i in element_list:
+                yield self.url_result(
+                    'https://www.radiofrance.fr' + i,
+                    ie=FranceCultureIE)
+
+        #return self.playlist_result(dict)
+        return self.playlist_result(fetch_page())
+            #OnDemandPagedList(fetch_page, 20), title, title=title)
+
+
 
