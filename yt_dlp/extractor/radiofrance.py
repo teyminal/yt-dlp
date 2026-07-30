@@ -1,6 +1,8 @@
 import itertools
 import json
+from math import fabs
 import re
+from typing import Iterable
 import urllib.parse
 
 from yt_dlp import YoutubeDL
@@ -278,47 +280,27 @@ class RadioFranceLiveIE(RadioFranceBaseIE):
 class RadioFrancePlaylistBaseIE(RadioFranceBaseIE):
     """Subclasses must set _METADATA_KEY"""
 
-    def _call_api(self, content_id, cursor, page_num):
-        raise NotImplementedError('This method must be implemented by subclasses')
-
-    def _generate_playlist_entries(self, content_id, content_response):
-        for page_num in itertools.count(2):
-            for entry in content_response['items']:
-                yield self.url_result(
-                    f'https://www.radiofrance.fr/{entry["path"]}', url_transparent=True, **traverse_obj(entry, {
-                        'title': 'title',
-                        'description': 'standFirst',
-                        'timestamp': ('publishedDate', {int_or_none}),
-                        'thumbnail': ('visual', 'src'),
-                    }))
-
-            next_cursor = traverse_obj(content_response, (('pagination', None), 'next'), get_all=False)
-            if not next_cursor:
-                break
-
-            content_response = self._call_api(content_id, next_cursor, page_num)
-
     def _real_extract(self, url):
-        print('extractPlayList')
+        title = self._match_id(url)
+        webpage = self._download_webpage(url, title)
+        description = self._html_search_regex(f',role:["\']([^"]+)["\'],',webpage,'Role/description',fatal=False) or ''#not using ['\"] because description can contain 's
 
-        display_id = self._match_id(url)
+        def fetch_page(page_num,url=url):
+            webpage = self._download_webpage(url+"?p="+str(page_num), title)
+            json_content = get_element_by_attribute('type', 'application/ld+json', webpage) or ''
+            element_list = traverse_obj(json.loads(json_content),('@graph',2,'itemListElement'))
+            if(element_list is None):
+                self.report_warning(f'Could not extract element_list{bug_reports_message()}')
+                return
+            for i in element_list:
+                url = i.get('url')
+                yield self.url_result(
+                    url,
+                    ie=FranceCultureIE)
 
-        metadata = self._download_json(
-            'https://www.radiofrance.fr/api/v2.1/path', display_id,
-            query={'value': urllib.parse.urlparse(url).path})['content']
-
-        content_id = metadata['id']
-
+        #return self.playlist_result(dict)
         return self.playlist_result(
-            self._generate_playlist_entries(content_id, metadata[self._METADATA_KEY]), content_id,
-            display_id=display_id, **{**traverse_obj(metadata, {
-                'title': 'title',
-                'description': 'standFirst',
-                'thumbnail': ('visual', 'src'),
-            }), **traverse_obj(metadata, {
-                'title': 'name',
-                'description': 'role',
-            })})
+            OnDemandPagedList(fetch_page, 20), title, title=title, description=description)
 
 
 class RadioFrancePodcastIE(RadioFrancePlaylistBaseIE):
@@ -411,53 +393,27 @@ class RadioFranceProfileIE(RadioFrancePlaylistBaseIE):
 
     _METADATA_KEY = 'documents'
 
-    def _call_api(self, profile_id, cursor, page_num):
-        print('DEBUG : https://www.radiofrance.fr/api/v2.1/taxonomy/'+profile_id+'}/documents')
-        resp = self._download_json(
-            f'https://www.radiofrance.fr/api/v2.1/taxonomy/{profile_id}/documents', profile_id,
-            note=f'Downloading page {page_num}', query={
-                'relation': 'personality',
-                'cursor': cursor,
-            })
-
-        resp['next'] = traverse_obj(resp, ('pagination', 'next'))
-        return resp
-
-
     def _real_extract(self, url):
-        video_id = self._match_id(url)
-        webpage = self._download_webpage(url, video_id)
-        json_content = get_element_by_attribute('type', 'application/ld+json', webpage) or ''
+        title = self._match_id(url)
+        webpage = self._download_webpage(url, title)
+        description = self._html_search_regex(f',role:["\']([^"]+)["\'],',webpage,'Role/description',fatal=False) or ''#not using ['\"] because description can contain 's
 
-        def fetch_page(page_num):
-            element_list = traverse_obj(json.loads(json_content),('@graph',1,'itemListElement')) or ''
-            for i in range(len(element_list)):
-                url = traverse_obj(element_list,(i,'url'))
-                regexp = re.compile(r'https://www.radiofrance.fr/[^/]*/podcasts/.*')#verify that it is in fact a podcast
-                if regexp.search(url):
-                    yield self.url_result(
-                        url,
-                        ie=FranceCultureIE,
-                        video_title="IDC")
-                    #dict.append(YoutubeDL().download(url))
-
-        # checks whether there is a page after, and if so, goes to download it
-        regexp = re.compile(r'<link[^>]+rel=["\']next["\'][^>]*href=["\'][^"\']+["\']')#verify that it is in fact a podcast
-
-        #if regexp.search(webpage):
-        #    next_page = self._html_search_regex( r'<link[^>]+rel=["\']next["\'][^>]*href=["\']([^"\']+)["\']', webpage, 'next page URL')
-        #    print(next_page)
-        #    if (next_page != ''):
-        #        more_pages = YoutubeDL().download(next_page)
-        #        if more_pages is Dict[str,Unknown]:
-        #            print(str(more_pages))
-        #            for i in more_pages:
-        #                dict.append(i)
+        def fetch_page(page_num,url=url):
+            webpage = self._download_webpage(url+"?p="+str(page_num), title)
+            json_content = get_element_by_attribute('type', 'application/ld+json', webpage) or ''
+            element_list = traverse_obj(json.loads(json_content),('@graph',1,'itemListElement'))
+            if(element_list is None):
+                self.report_warning(f'Could not extract element_list{bug_reports_message()}')
+                return
+            for i in element_list:
+                url = i.get('url')
+                yield self.url_result(
+                    url,
+                    ie=FranceCultureIE)
 
         #return self.playlist_result(dict)
         return self.playlist_result(
-            OnDemandPagedList(fetch_page, 20), 'full_id', display_id='display_id',
-            title='page_data.get(\'title\')', description='page_data.get(\'synopsis\')')
+            OnDemandPagedList(fetch_page, 20), title, title=title, description=description)
 
 
 
