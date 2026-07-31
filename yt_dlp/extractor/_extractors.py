@@ -1509,7 +1509,6 @@ from .radiocanada import (
 from .radiode import RadioDeIE
 from .radiofrance import (
     FranceCultureIE,
-    RadioFranceIE,
     RadioFranceLiveIE,
     RadioFrancePodcastIE,
     RadioFranceProfileIE,

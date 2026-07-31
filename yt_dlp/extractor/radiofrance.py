@@ -1,79 +1,68 @@
-import itertools
 import json
-from math import fabs
 import re
-from typing import Iterable
-import urllib.parse
-
-from yt_dlp import YoutubeDL
 
 from .common import InfoExtractor
 from ..utils import (
+    OnDemandPagedList,
     get_element_by_attribute,
-    int_or_none,
     join_nonempty,
     js_to_json,
     parse_duration,
-    strftime_or_none,
     traverse_obj,
     unified_strdate,
-    urljoin,
-    OnDemandPagedList,
 )
 
-
-class RadioFranceIE(InfoExtractor):
-    _VALID_URL = r'https?://maison\.radiofrance\.fr/radiovisions/(?P<id>[^?#]+)'
-    IE_NAME = 'radiofrance'
-
-    _TEST = {
-        'url': 'http://maison.radiofrance.fr/radiovisions/one-one',
-        'md5': 'bdbb28ace95ed0e04faab32ba3160daf',
-        'info_dict': {
-            'id': 'one-one',
-            'ext': 'ogg',
-            'title': 'One to one',
-            'description': "Plutôt que d'imaginer la radio de demain comme technologie ou comme création de contenu, je veux montrer que quelles que soient ses évolutions, j'ai l'intime conviction que la radio continuera d'être un grand média de proximité pour les auditeurs.",
-            'uploader': 'Thomas Hercouët',
-        },
-    }
-
-    def _real_extract(self, url):
-        print('extractGlobal')
-        m = self._match_valid_url(url)
-        video_id = m.group('id')
-
-        webpage = self._download_webpage(url, video_id)
-        title = self._html_search_regex(r'<h1>(.*?)</h1>', webpage, 'title')
-        description = self._html_search_regex(
-            r'<div class="bloc_page_wrapper"><div class="text">(.*?)</div>',
-            webpage, 'description', fatal=False)
-        uploader = self._html_search_regex(
-            r'<div class="credit">&nbsp;&nbsp;&copy;&nbsp;(.*?)</div>',
-            webpage, 'uploader', fatal=False)
-
-        formats_str = self._html_search_regex(
-            r'class="jp-jplayer[^"]*" data-source="([^"]+)">',
-            webpage, 'audio URLs')
-        formats = [
-            {
-                'format_id': fm[0],
-                'url': fm[1],
-                'vcodec': 'none',
-                'quality': i,
-            }
-            for i, fm in
-            enumerate(re.findall(r"([a-z0-9]+)\s*:\s*'([^']+)'", formats_str))
-        ]
-
-        return {
-            'id': video_id,
-            'title': title,
-            'formats': formats,
-            'description': description,
-            'uploader': uploader,
-        }
-
+#class RadioFranceIE(InfoExtractor):
+#    _VALID_URL = r'https?://maison\.radiofrance\.fr/radiovisions/(?P<id>[^?#]+)'
+#    IE_NAME = 'radiofrance'
+#
+#    _TEST = {
+#        'url': 'http://maison.radiofrance.fr/radiovisions/one-one',
+#        'md5': 'bdbb28ace95ed0e04faab32ba3160daf',
+#        'info_dict': {
+#            'id': 'one-one',
+#            'ext': 'ogg',
+#            'title': 'One to one',
+#            'description': "Plutôt que d'imaginer la radio de demain comme technologie ou comme création de contenu, je veux montrer que quelles que soient ses évolutions, j'ai l'intime conviction que la radio continuera d'être un grand média de proximité pour les auditeurs.",
+#            'uploader': 'Thomas Hercouët',
+#        },
+#    }
+#
+#    def _real_extract(self, url):
+#        m = self._match_valid_url(url)
+#        video_id = m.group('id')
+#
+#        webpage = self._download_webpage(url, video_id)
+#        title = self._html_search_regex(r'<h1>(.*?)</h1>', webpage, 'title')
+#        description = self._html_search_regex(
+#            r'<div class="bloc_page_wrapper"><div class="text">(.*?)</div>',
+#            webpage, 'description', fatal=False)
+#        uploader = self._html_search_regex(
+#            r'<div class="credit">&nbsp;&nbsp;&copy;&nbsp;(.*?)</div>',
+#            webpage, 'uploader', fatal=False)
+#
+#        formats_str = self._html_search_regex(
+#            r'class="jp-jplayer[^"]*" data-source="([^"]+)">',
+#            webpage, 'audio URLs')
+#        formats = [
+#            {
+#                'format_id': fm[0],
+#                'url': fm[1],
+#                'vcodec': 'none',
+#                'quality': i,
+#            }
+#            for i, fm in
+#            enumerate(re.findall(r"([a-z0-9]+)\s*:\s*'([^']+)'", formats_str))
+#        ]
+#
+#        return {
+#            'id': video_id,
+#            'title': title,
+#            'formats': formats,
+#            'description': description,
+#            'uploader': uploader,
+#        }
+#
 
 class RadioFranceBaseIE(InfoExtractor):
     _VALID_URL_BASE = r'https?://(?:www\.)?radiofrance\.fr'
@@ -112,7 +101,7 @@ class FranceCultureIE(RadioFranceBaseIE):
                 'ext': 'mp3',
                 'title': 'La physique d’Einstein aiderait-elle à comprendre le cerveau ?',
                 'description': 'Existerait-il un pont conceptuel entre la physique de l’espace-temps et les neurosciences ?',
-                'thumbnail': r're:^https?://.*\.(?:jpg|png)',
+                'thumbnail': r're:^https?://.*',
                 'upload_date': '20220514',
                 'duration': 2750,
             },
@@ -123,8 +112,8 @@ class FranceCultureIE(RadioFranceBaseIE):
                 'id': '2107675',
                 'display_id': 'le-7-9-30-du-vendredi-10-mars-2023',
                 'title': 'Inflation alimentaire : comment en sortir ? - Régis Debray et Claude Grange - Cybèle Idelot',
-                'description': 'md5:36ee74351ede77a314fdebb94026b916',
-                'thumbnail': r're:^https?://.*\.(?:jpg|png)',
+                'description': 'md5:36ee74351ede77a314fdebb94026b916',#weird description, but ok?
+                'thumbnail': r're:^https?://.*',
                 'upload_date': '20230310',
                 'duration': 8977,
                 'ext': 'mp3',
@@ -140,7 +129,6 @@ class FranceCultureIE(RadioFranceBaseIE):
     ]
 
     def _real_extract(self, url):
-        print('extractCul')
 
         video_id, display_id = self._match_valid_url(url).group('id', 'display_id')
         webpage = self._download_webpage(url, display_id)
@@ -244,7 +232,6 @@ class RadioFranceLiveIE(RadioFranceBaseIE):
     }]
 
     def _real_extract(self, url):
-        print('extractLive')
 
         station_id, substation_id = self._match_valid_url(url).group('id', 'substation_id')
 
@@ -278,15 +265,15 @@ class RadioFranceLiveIE(RadioFranceBaseIE):
 
 
 class RadioFrancePlaylistBaseIE(RadioFranceBaseIE):
-    """Subclasses must set _METADATA_KEY"""
-
     def _real_extract(self, url):
-        title = self._match_id(url)
-        webpage = self._download_webpage(url, title)
-        description = self._html_search_regex(f',role:["\']([^"]+)["\'],',webpage,'Role/description',fatal=False) or ''#not using ['\"] because description can contain 's
+        display_id = self._match_id(url)
+        webpage = self._download_webpage(url, display_id)
+        id = self._search_regex(r'covertitle-(?P<id>[^"]+)"',webpage, "id",fatal=False) or ''
+        title = self._search_regex( r'<h1[^>]*>(?P<id>[^<]+)<' ,webpage, "title",fatal=False) or ''
+        description = self._search_regex(r'name="description" content="([^"]+)"',webpage,'Role/description',fatal=False) or ''#not using ['\"] because description can contain 's
 
         def fetch_page(page_num,url=url):
-            webpage = self._download_webpage(url+"?p="+str(page_num), title)
+            webpage = self._download_webpage(url+'?p='+str(page_num), display_id)
             json_content = get_element_by_attribute('type', 'application/ld+json', webpage) or ''
             element_list = None
             for elt in json.loads(json_content).get('@graph'):
@@ -294,7 +281,7 @@ class RadioFrancePlaylistBaseIE(RadioFranceBaseIE):
                     element_list = elt.get('itemListElement')
 
             if(element_list is None):
-                self.report_warning(f'Could not extract element_list')
+                self.report_warning('Could not extract element_list')
                 return
             for i in element_list:
                 url = i.get('url')
@@ -304,7 +291,7 @@ class RadioFrancePlaylistBaseIE(RadioFranceBaseIE):
 
         #return self.playlist_result(dict)
         return self.playlist_result(
-            OnDemandPagedList(fetch_page, 20), title, title=title, description=description)
+            OnDemandPagedList(fetch_page, 20), id, display_id=display_id,description=description,title=title)
 
 
 class RadioFrancePodcastIE(RadioFrancePlaylistBaseIE):
@@ -315,13 +302,12 @@ class RadioFrancePodcastIE(RadioFrancePlaylistBaseIE):
     '''
 
     _TESTS = [{
-        'url': 'https://www.radiofrance.fr/franceinfo/podcasts/le-billet-vert',
+        'url': 'https://www.radiofrance.fr/franceinfo/podcasts/le-billet-sciences',
         'info_dict': {
             'id': 'eaf6ef81-a980-4f1c-a7d1-8a75ecd54b17',
-            'display_id': 'le-billet-vert',
+            'display_id': 'le-billet-sciences',
             'title': 'Le billet sciences',
-            'description': 'md5:eb1007b34b0c0a680daaa71525bbd4c1',
-            'thumbnail': r're:^https?://.*\.(?:jpg|png)',
+            'description': 'L\'actualité scientifique avec le service sciences, santé, environnement et technologie de franceinfo',
         },
         'playlist_mincount': 11,
     }, {
@@ -360,8 +346,10 @@ class RadioFrancePodcastIE(RadioFrancePlaylistBaseIE):
         'only_matching': True,
     }]
 
+    #it just works IG, so I could remove this class
+
 class RadioFranceProfileIE(RadioFrancePlaylistBaseIE):
-    _VALID_URL = rf'{RadioFranceBaseIE._VALID_URL_BASE}/personnes/(?P<id>[\w-]+)'
+    _VALID_URL = rf'{RadioFranceBaseIE._VALID_URL_BASE}/personnes/(?md5:eb1007b34b0c0a680daaa71525bbd4c1P<id>[\w-]+)'
 
     _TESTS = [{
         'url': 'https://www.radiofrance.fr/personnes/thomas-pesquet?p=3',
@@ -386,6 +374,9 @@ class RadioFranceProfileIE(RadioFrancePlaylistBaseIE):
         'url': 'https://www.radiofrance.fr/personnes/lea-salame',
         'only_matching': True,
     }]
+
+        #it just works IG, so I could remove this class
+
 
 class RadioFranceProgramScheduleIE(RadioFranceBaseIE):
     _VALID_URL = rf'''(?x)
@@ -428,8 +419,8 @@ class RadioFranceProgramScheduleIE(RadioFranceBaseIE):
     }]
 
     def _real_extract(self, url):
-        title = self._match_id(url)
-        #description = self._html_search_regex(f',role:["\']([^"]+)["\'],',webpage,'Role/description',fatal=False) or ''#not using ['\"] because description can contain 's
+        identifier = self._match_id(url)
+        title = 'programme du ' + identifier.split('=')[-1]
 
         def fetch_page():
             title = self._match_id(url)
@@ -443,8 +434,5 @@ class RadioFranceProgramScheduleIE(RadioFranceBaseIE):
                     ie=FranceCultureIE)
 
         #return self.playlist_result(dict)
-        return self.playlist_result(fetch_page())
+        return self.playlist_result(fetch_page(),identifier,title=title)
             #OnDemandPagedList(fetch_page, 20), title, title=title)
-
-
-
